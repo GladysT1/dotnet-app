@@ -1,31 +1,48 @@
-version: 0.2
-
-phases:
-  install:
-    runtime-versions:
-      nodejs: 14  # Keep Node.js version as is
-      dotnet: 8.0
-    commands:
-      - echo "Restoring .NET project dependencies..."
-      - dotnet restore dotnet-app.csproj
-      - wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip  # Updated to a compatible version
-      - unzip sonar-scanner-cli-5.0.1.3006-linux.zip
-      - export PATH=$PATH:/sonar-scanner-5.0.1.3006-linux/bin
-
+name: SonarQube Cloud
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened]
+jobs:
   build:
-    commands:
-      - echo "Publishing the project..."
-      - dotnet publish dotnet-app.csproj --configuration Release
-      - echo "Logging in to SonarCloud....."
-      - ./sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner -X --define sonar.organization=tuaks --define sonar.projectKey=GladysT1_sonarcloud-demo --define sonar.host.url=https://sonarcloud.io --define sonar.login=02ca1da698dc44241769ac3322c85b627af3a8fb
-post_build:
-    commands:
-      - echo "Running tests..."
-      - dotnet test --no-build --verbosity normal
-      - echo "Building Project"
-      - echo "Finished Building"
-
-artifacts:
-  files:
-    - 'bin/Release/net8.0/publish/**' # Use the default output directory for published files
-  discard-paths: yes
+    name: Build and analyze
+    runs-on: windows-latest
+    steps:
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: 'zulu' # Alternative distribution options are available.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - name: Cache SonarQube Cloud packages
+        uses: actions/cache@v4
+        with:
+          path: ~\sonar\cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+      - name: Cache SonarQube Cloud scanner
+        id: cache-sonar-scanner
+        uses: actions/cache@v4
+        with:
+          path: .\.sonar\scanner
+          key: ${{ runner.os }}-sonar-scanner
+          restore-keys: ${{ runner.os }}-sonar-scanner
+      - name: Install SonarQube Cloud scanner
+        if: steps.cache-sonar-scanner.outputs.cache-hit != 'true'
+        shell: powershell
+        run: |
+          New-Item -Path .\.sonar\scanner -ItemType Directory
+          dotnet tool update dotnet-sonarscanner --tool-path .\.sonar\scanner
+      - name: Build and analyze
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        shell: powershell
+        run: |
+          .\.sonar\scanner\dotnet-sonarscanner begin /k:"GladysT1_dotnet-app" /o:"tuaks" /d:sonar.token="${{ secrets.SONAR_TOKEN }}" /d:sonar.host.url="https://sonarcloud.io"
+          dotnet build
+          .\.sonar\scanner\dotnet-sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
