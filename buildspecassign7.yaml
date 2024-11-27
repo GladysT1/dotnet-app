@@ -1,0 +1,31 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 14  # Keep Node.js version as is
+      dotnet: 8.0
+    commands:
+      - echo "Restoring .NET project dependencies..."
+      - dotnet restore dotnet-app.csproj
+      - wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip  # Updated to a compatible version
+      - unzip sonar-scanner-cli-5.0.1.3006-linux.zip
+      - export PATH=$PATH:/sonar-scanner-5.0.1.3006-linux/bin
+
+  build:
+    commands:
+      - echo "Publishing the project..."
+      - dotnet publish dotnet-app.csproj --configuration Release
+      - echo "Logging in to SonarCloud....."
+      - ./sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner -X --define sonar.organization=tuaks --define sonar.projectKey=GladysT1_sonarcloud-demo --define sonar.host.url=https://sonarcloud.io --define sonar.login=02ca1da698dc44241769ac3322c85b627af3a8fb
+post_build:
+    commands:
+      - echo "Running tests..."
+      - dotnet test --no-build --verbosity normal
+      - echo "Building Project"
+      - echo "Finished Building"
+
+artifacts:
+  files:
+    - 'bin/Release/net8.0/publish/**' # Use the default output directory for published files
+  discard-paths: yes
